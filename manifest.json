@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "nmr.omail",
+  "name": "Omail",
+  "version": "1.0.0",
+  "author": "Antigravity",
+  "description": "Unread email counter and quick view",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omail",
+    "description": "Unread email counter and quick view",
+    "category": "Custom",
+    "allowMultiple": false
+  }
+}

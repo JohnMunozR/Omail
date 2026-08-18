@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "custom.omail",
+  "name": "Omail",
+  "version": "1.0.0",
+  "author": "Antigravity",
+  "license": "MIT",
+  "description": "Gestor de correos flotante.",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "OmailOverlay.qml"
+  }
+}
