@@ -18,35 +18,11 @@ Panel {
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
   property string activeFilter: "Inbox"
-  property bool isLoadingMore: false
-  property bool allLoaded: false
-
-  Process {
-    id: saveCredsProc
-    command: ["python3", "-c", "import sys, json, os; os.makedirs(os.path.expanduser('~/.config/omail'), exist_ok=True); json.dump({'email': sys.argv[1], 'app_password': sys.argv[2]}, open(os.path.expanduser('~/.config/omail/credentials.json'), 'w'))", emailInput.text, passInput.text]
-    onExited: {
-        if (root.hostWidget) root.hostWidget.refresh()
-    }
-  }
-
-  Process {
-    id: unlinkProc
-    command: ["rm", "-f", Quickshell.env("HOME") + "/.config/omail/credentials.json"]
-    onExited: {
-        if (root.hostWidget) {
-            root.hostWidget.emailsList = []
-            root.hostWidget.unreadCount = "?"
-            root.hostWidget.omailError = "NOT_LOGGED_IN"
-        }
-    }
-  }
+  property bool isLoadingMore: root.hostWidget ? root.hostWidget.isLoadingMore : false
+  property bool allLoaded: root.hostWidget ? root.hostWidget.allLoaded : false
 
   function loadMoreEmails() {
-    if (root.isLoadingMore || root.allLoaded || !root.hostWidget || !root.hostWidget.emailsList) return
-    root.isLoadingMore = true
-    var currentOffset = root.hostWidget.emailsList.length
-    fetchMoreProcess.command = ["python3", "/home/nmr/Projects/omail/fetch_gmail.py", "--offset", String(currentOffset), "--limit", "20"]
-    fetchMoreProcess.running = true
+    if (root.hostWidget) root.hostWidget.loadMoreEmails()
   }
 
   function open() {
@@ -63,7 +39,7 @@ Panel {
     // Clear lazy-loaded emails from memory to free cache
     if (root.hostWidget && root.hostWidget.emailsList && root.hostWidget.emailsList.length > 60) {
       root.hostWidget.emailsList = root.hostWidget.emailsList.slice(0, 60)
-      root.allLoaded = false
+      root.hostWidget.allLoaded = false
     }
   }
 
@@ -81,36 +57,6 @@ Panel {
   function setCenterHoverRevealSuppressed(value) {
     if (root.bar && "centerHoverRevealSuppressed" in root.bar)
       root.bar.centerHoverRevealSuppressed = value
-  }
-
-  Process {
-    id: fetchMoreProcess
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        try {
-          var text = String(fetchMoreProcess.stdout.text || "").trim()
-          if (text) {
-            var result = JSON.parse(text)
-            if (result.emails && result.emails.length > 0) {
-              var currentList = root.hostWidget.emailsList
-              for (var i = 0; i < result.emails.length; i++) {
-                currentList.push(result.emails[i])
-              }
-              root.hostWidget.emailsList = currentList
-            } else {
-              root.allLoaded = true
-            }
-          }
-        } catch(e) {
-          console.log("Error parsing lazy load JSON:", e)
-        }
-        root.isLoadingMore = false
-      }
-    }
-    onExited: {
-      root.isLoadingMore = false
-    }
   }
 
   KeyboardPanel {
@@ -223,7 +169,9 @@ Panel {
               tooltipText: "Unlink Account"
               foreground: root.contentForeground
               fontFamily: root.contentFontFamily
-              onClicked: unlinkProc.running = true
+              onClicked: {
+                if (root.hostWidget) root.hostWidget.unlinkAccount()
+              }
             }
 
             PanelActionButton {
@@ -277,13 +225,12 @@ Panel {
              }
 
              Button {
-                text: saveCredsProc.running || (root.hostWidget && root.hostWidget.isFetching && !root.hostWidget.isConnected) ? "Verifying credentials..." :
+                text: (root.hostWidget && root.hostWidget.isSavingCreds) || (root.hostWidget && root.hostWidget.isFetching && !root.hostWidget.isConnected) ? "Verifying credentials..." :
                       (root.hostWidget && root.hostWidget.isFetching && root.hostWidget.isConnected) ? "Downloading emails..." : "Link Account"
                 width: parent.width
-                enabled: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.text) && passInput.text.length > 0 && !((root.hostWidget && root.hostWidget.isFetching) || saveCredsProc.running)
+                enabled: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.text) && passInput.text.length > 0 && !(root.hostWidget && (root.hostWidget.isFetching || root.hostWidget.isSavingCreds))
                 onClicked: {
-                   if (root.hostWidget) root.hostWidget.omailError = "NOT_LOGGED_IN"
-                   saveCredsProc.running = true
+                   if (root.hostWidget) root.hostWidget.saveCredentials(emailInput.text, passInput.text)
                 }
              }
           }

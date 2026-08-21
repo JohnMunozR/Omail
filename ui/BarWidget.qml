@@ -15,6 +15,9 @@ BarWidget {
   property var emailsList: []
   property bool isFetching: false
   property bool isConnected: false
+  property bool isLoadingMore: false
+  property bool allLoaded: false
+  property bool isSavingCreds: false
 
   // Force minimum visibility and display string
   readonly property string displayText: "󰇰"
@@ -26,6 +29,25 @@ BarWidget {
       isFetching = true
       fetchProcess.running = true
     }
+  }
+
+  function saveCredentials(email, pass) {
+    omailError = "NOT_LOGGED_IN"
+    isSavingCreds = true
+    saveCredsProc.command = ["python3", "-c", "import sys, json, os; os.makedirs(os.path.expanduser('~/.config/omail'), exist_ok=True); json.dump({'email': sys.argv[1], 'app_password': sys.argv[2]}, open(os.path.expanduser('~/.config/omail/credentials.json'), 'w'))", email, pass]
+    saveCredsProc.running = true
+  }
+
+  function unlinkAccount() {
+    unlinkProc.running = true
+  }
+
+  function loadMoreEmails() {
+    if (isLoadingMore || allLoaded || !emailsList) return
+    isLoadingMore = true
+    var currentOffset = emailsList.length
+    fetchMoreProcess.command = ["python3", "/home/nmr/Projects/omail/daemon/fetch_gmail.py", "--offset", String(currentOffset), "--limit", "20"]
+    fetchMoreProcess.running = true
   }
 
   // ---- Panel popup routing
@@ -68,8 +90,56 @@ BarWidget {
   onSettingsChanged: injectPanel()
 
   Process {
+    id: saveCredsProc
+    onExited: {
+      root.isSavingCreds = false
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: unlinkProc
+    command: ["rm", "-f", Quickshell.env("HOME") + "/.config/omail/credentials.json"]
+    onExited: {
+      root.emailsList = []
+      root.unreadCount = "?"
+      root.omailError = "NOT_LOGGED_IN"
+    }
+  }
+
+  Process {
+    id: fetchMoreProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try {
+          var text = String(fetchMoreProcess.stdout.text || "").trim()
+          if (text) {
+            var result = JSON.parse(text)
+            if (result.emails && result.emails.length > 0) {
+              var currentList = root.emailsList
+              for (var i = 0; i < result.emails.length; i++) {
+                currentList.push(result.emails[i])
+              }
+              root.emailsList = currentList
+            } else {
+              root.allLoaded = true
+            }
+          }
+        } catch(e) {
+          console.log("Error parsing lazy load JSON:", e)
+        }
+        root.isLoadingMore = false
+      }
+    }
+    onExited: {
+      root.isLoadingMore = false
+    }
+  }
+
+  Process {
     id: fetchProcess
-    command: ["python3", Quickshell.env("HOME") + "/Projects/omail/fetch_gmail.py"]
+    command: ["python3", Quickshell.env("HOME") + "/Projects/omail/daemon/fetch_gmail.py"]
     onExited: root.isFetching = false
     stdout: SplitParser {
       onRead: function(data) {
