@@ -9,6 +9,7 @@ import json
 import imaplib
 import email
 import re
+import sys
 import argparse
 from email.header import decode_header
 from html.parser import HTMLParser
@@ -272,10 +273,35 @@ def main() -> None:
         client.connect()
         unread_count, emails = client.fetch_unread_emails(offset=args.offset, limit=args.limit)
         
+        # Diffing logic
+        has_new = False
+        if args.offset == 0:
+            last_ids_path = os.path.expanduser('~/.config/omail/last_ids.json')
+            current_ids = [e['url'] for e in emails if e['category'] == 'Inbox']
+            try:
+                if os.path.exists(last_ids_path):
+                    with open(last_ids_path, 'r') as f:
+                        old_ids = set(json.load(f))
+                    for cid in current_ids:
+                        if cid not in old_ids:
+                            has_new = True
+                            break
+            except (OSError, json.JSONDecodeError) as err:
+                print(f"Error reading last_ids.json: {err}", file=sys.stderr)
+            
+            # Save current ids
+            try:
+                os.makedirs(os.path.dirname(last_ids_path), exist_ok=True)
+                with open(last_ids_path, 'w') as f:
+                    json.dump(current_ids, f)
+            except OSError as err:
+                print(f"Error writing last_ids.json: {err}", file=sys.stderr)
+
         emit_json({
             "unread_count": unread_count,
             "emails": emails,
             "user_email": user,
+            "has_new": has_new,
             "error": None
         })
     except Exception as e:

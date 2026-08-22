@@ -18,19 +18,27 @@ BarWidget {
   property bool isLoadingMore: false
   property bool allLoaded: false
   property bool isSavingCreds: false
+  property bool hasNewMail: false
+  property string myDisplayText: hasNewMail ? "󰇮" : "󰇰"
+  property var verticalLines: [myDisplayText]
 
-  // Force minimum visibility and display string
-  readonly property string displayText: "󰇰"
-  readonly property var verticalLines: [displayText]
+  Process {
+    id: soundProcess
+    command: ["/usr/bin/paplay", "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"]
+  }
 
+  Process {
+    id: notifyProcess
+    command: ["/usr/bin/notify-send", "-a", "Omail", "New Mail", "You have a new message in your Inbox"]
+  }
   function refresh() {
     if (!isFetching) {
       isConnected = false
       isFetching = true
+      fetchProcess.running = false
       fetchProcess.running = true
     }
   }
-
   function saveCredentials(email, pass) {
     omailError = "NOT_LOGGED_IN"
     isSavingCreds = true
@@ -54,6 +62,7 @@ BarWidget {
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function open() {
+    root.hasNewMail = false
     if (panelLoader.item) panelLoader.item.open()
   }
 
@@ -62,6 +71,7 @@ BarWidget {
   }
 
   function togglePanel() {
+    root.hasNewMail = false
     if (panelLoader.item) panelLoader.item.toggle()
   }
 
@@ -109,27 +119,26 @@ BarWidget {
 
   Process {
     id: fetchMoreProcess
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
+    property string fetchMoreBuffer: ""
+    stdout: SplitParser {
+      onRead: function(data) {
+        fetchMoreProcess.fetchMoreBuffer += data
         try {
-          var text = String(fetchMoreProcess.stdout.text || "").trim()
-          if (text) {
-            var result = JSON.parse(text)
-            if (result.emails && result.emails.length > 0) {
-              var currentList = root.emailsList
-              for (var i = 0; i < result.emails.length; i++) {
-                currentList.push(result.emails[i])
-              }
-              root.emailsList = currentList
-            } else {
-              root.allLoaded = true
+          var result = JSON.parse(fetchMoreProcess.fetchMoreBuffer)
+          fetchMoreProcess.fetchMoreBuffer = ""
+          if (result.emails && result.emails.length > 0) {
+            var currentList = root.emailsList
+            for (var i = 0; i < result.emails.length; i++) {
+              currentList.push(result.emails[i])
             }
+            root.emailsList = currentList
+          } else {
+            root.allLoaded = true
           }
+          root.isLoadingMore = false
         } catch(e) {
-          console.log("Error parsing lazy load JSON:", e)
+          // Accumulate chunks until JSON is valid
         }
-        root.isLoadingMore = false
       }
     }
     onExited: {
@@ -137,32 +146,38 @@ BarWidget {
     }
   }
 
+  property string fetchBuffer: ""
   Process {
     id: fetchProcess
     command: ["python3", Quickshell.env("HOME") + "/Projects/omail/daemon/fetch_gmail.py"]
     onExited: root.isFetching = false
     stdout: SplitParser {
       onRead: function(data) {
+        root.fetchBuffer += data
         try {
-          var parsed = JSON.parse(data)
+          var parsed = JSON.parse(root.fetchBuffer)
+          root.fetchBuffer = ""
           if (parsed.status === "CONNECTED") {
-             root.isConnected = true
-             return
+            root.isConnected = true
+            return
           }
           if (parsed.error) {
-             root.omailError = parsed.error
-             root.unreadCount = "?"
-             root.emailsList = []
-             root.activeEmail = ""
+            root.omailError = parsed.error
           } else {
-             root.omailError = ""
-             root.unreadCount = String(parsed.unread_count)
-             root.emailsList = parsed.emails
-             if (parsed.user_email) root.activeEmail = parsed.user_email
+            root.omailError = ""
+            root.unreadCount = String(parsed.unread_count)
+            if (parsed.has_new) {
+              root.hasNewMail = true
+              soundProcess.running = false
+              soundProcess.running = true
+              notifyProcess.running = false
+              notifyProcess.running = true
+            }
+            root.emailsList = parsed.emails
+            if (parsed.user_email) root.activeEmail = parsed.user_email
           }
         } catch(e) {
-          root.omailError = "Error de parseo JSON"
-          root.unreadCount = "?"
+          // Accumulate chunks until JSON is valid
         }
       }
     }
@@ -204,7 +219,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     slotSize: Style.bar.statusSlot
-    text: root.displayText
+    text: root.myDisplayText
 
     onPressed: function(b) {
       if (b === Qt.RightButton) root.refresh() // Click derecho refresca
