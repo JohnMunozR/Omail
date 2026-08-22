@@ -18,30 +18,79 @@ from email.message import Message
 from email.utils import parsedate_to_datetime
 
 class HTMLTextExtractor(HTMLParser):
-    """Parses HTML content to extract plain text."""
+    """Parses HTML content to extract basic Markdown."""
     def __init__(self) -> None:
         super().__init__()
         self.result: List[str] = []
         self.in_style_or_script: bool = False
+        self.current_link: Optional[str] = None
+        self.link_start_index: int = -1
+        self.list_level: int = 0
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
         if tag in ('script', 'style'):
             self.in_style_or_script = True
-        elif tag in ('br', 'p', 'div', 'tr', 'li'):
-            self.result.append('\n')
+        elif tag in ('br', 'p', 'div', 'tr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th'):
+            self.result.append(' ' if self.current_link else '\n\n')
+        elif tag == 'li':
+            self.result.append(' ' if self.current_link else '\n\n• ')
+        elif tag in ('b', 'strong'):
+            self.result.append('**')
+        elif tag in ('i', 'em'):
+            self.result.append('*')
+        elif tag == 'ul':
+            self.list_level += 1
+            self.result.append(' ' if self.current_link else '\n\n')
+        elif tag == 'a':
+            if not self.current_link:
+                href = next((v for k, v in attrs if k == 'href'), None)
+                if href:
+                    self.current_link = href.replace(' ', '%20').replace('\n', '')
+                    self.link_start_index = len(self.result)
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ('script', 'style'):
             self.in_style_or_script = False
+        elif tag in ('b', 'strong'):
+            self.result.append('**')
+        elif tag in ('i', 'em'):
+            self.result.append('*')
+        elif tag == 'ul':
+            self.list_level = max(0, self.list_level - 1)
+            self.result.append(' ' if self.current_link else '\n\n')
+        elif tag in ('p', 'div', 'tr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th'):
+            self.result.append(' ' if self.current_link else '\n\n')
+        elif tag == 'li':
+            self.result.append(' ' if self.current_link else '\n\n')
+        elif tag == 'a':
+            if self.current_link:
+                link_text = "".join(self.result[self.link_start_index:])
+                if not link_text.strip():
+                    self.result = self.result[:self.link_start_index]
+                else:
+                    self.result.insert(self.link_start_index, '[')
+                    self.result.append(f']({self.current_link})')
+                self.current_link = None
 
     def handle_data(self, data: str) -> None:
         if not self.in_style_or_script:
-            text = data.strip()
-            if text:
-                self.result.append(text + " ")
+            text = data.replace('\n', ' ').replace('\r', '')
+            text = re.sub(r' +', ' ', text)
+            if text.strip() or (text and self.result and not self.result[-1].endswith('\n')):
+                self.result.append(text)
 
     def get_text(self) -> str:
-        return "".join(self.result).strip()
+        content = "".join(self.result)
+        content = content.replace('\xa0', ' ')
+        content = re.sub(r'[\u200b-\u200f\u2028-\u202f\u2060-\u206f\u034f\ufeff]', '', content)
+        content = re.sub(r'\*\*(.*?)\*\*', lambda m: f" **{m.group(1).strip()}** ", content)
+        content = re.sub(r'\[[ \t]+', '[', content)
+        content = re.sub(r'[ \t]+\]\(', '](', content)
+        content = re.sub(r'[ \t]*\n[ \t]*', '\n', content)
+        content = re.sub(r'^[ \t]+', '', content, flags=re.MULTILINE)
+        content = re.sub(r' {2,}', ' ', content)
+        content = re.sub(r'\n{3,}', '\n\n', content)
+        return content.strip()
 
 class EmailParser:
     """Handles parsing and decoding of email messages."""
@@ -116,12 +165,16 @@ class EmailParser:
             except Exception:
                 pass
 
-        final_body = body_plain.strip()
-        if not final_body and body_html.strip():
+        final_body = ""
+        if body_html.strip():
             final_body = EmailParser.strip_html(body_html)
+        elif body_plain.strip():
+            # Escape markdown characters in plain text to prevent QML rendering issues
+            plain = body_plain.strip()
+            for char in ('*', '_', '`', '#', '[', ']', '<', '>'):
+                plain = plain.replace(char, f'\\{char}')
+            final_body = plain
             
-        if len(final_body) > 2000:
-            final_body = final_body[:2000] + "..."
         return final_body.strip()
 
     @staticmethod
@@ -186,8 +239,8 @@ class GmailClient:
             except Exception:
                 pass
 
-    def fetch_unread_emails(self, offset: int = 0, limit: int = 60) -> Tuple[int, List[Dict[str, Any]]]:
-        """Fetches unread emails with a given offset and limit."""
+    def fetch_emails(self, offset: int = 0, limit: int = 60) -> Tuple[int, List[Dict[str, Any]]]:
+        """Fetches emails with a given offset and limit, returning unread count and latest emails."""
         if not self.mail:
             raise RuntimeError("Not connected to IMAP server.")
             
@@ -196,29 +249,34 @@ class GmailClient:
         status, response = self.mail.search(None, 'UNSEEN')
         if status != 'OK':
             raise Exception("Failed to search UNSEEN emails.")
-            
-        status, response_primary = self.mail.search(None, 'UNSEEN', 'X-GM-RAW', 'category:primary')
-        primary_nums: Set[bytes] = set(response_primary[0].split()) if status == 'OK' else set()
-            
-        unread_msg_nums = response[0].split()
-        unread_count = len(unread_msg_nums)
+        unseen_nums: Set[bytes] = set(response[0].split()) if status == 'OK' else set()
+        unread_count = len(unseen_nums)
         
+        status_all, response_all = self.mail.search(None, 'ALL')
+        all_msg_nums = response_all[0].split() if status_all == 'OK' else []
+            
+        status_primary, response_primary = self.mail.search(None, 'ALL', 'X-GM-RAW', 'category:primary')
+        primary_nums: Set[bytes] = set(response_primary[0].split()) if status_primary == 'OK' else set()
+            
         recent_emails: List[Dict[str, Any]] = []
         
-        if unread_count > 0:
-            latest_nums = unread_msg_nums[::-1]
+        if len(all_msg_nums) > 0:
+            latest_nums = all_msg_nums[::-1]
             start_idx = offset
             end_idx = start_idx + limit
             latest_nums = latest_nums[start_idx:end_idx]
             
             for num in latest_nums:
-                typ, msg_data = self.mail.fetch(num, '(X-GM-THRID BODY.PEEK[])')
+                typ, msg_data = self.mail.fetch(num, '(UID X-GM-THRID BODY.PEEK[])')
                 if typ != 'OK':
                     continue
                     
                 for response_part in msg_data:
                     if isinstance(response_part, tuple):
                         header_line = response_part[0].decode('utf-8', errors='ignore')
+                        
+                        uid_match = re.search(r'UID (\d+)', header_line)
+                        uid = uid_match.group(1) if uid_match else None
                         
                         thrid_match = re.search(r'X-GM-THRID (\d+)', header_line)
                         url = "https://mail.google.com/mail/u/0/#inbox"
@@ -236,13 +294,17 @@ class GmailClient:
                         date = EmailParser.parse_date(raw_date)
                         body = EmailParser.get_plain_text(msg)
                         
+                        is_unread = num in unseen_nums
+                        
                         recent_emails.append({
+                            "uid": uid,
                             "from": sender,
                             "subject": subject,
                             "date": date,
                             "body": body,
                             "url": url,
-                            "category": category
+                            "category": category,
+                            "is_unread": is_unread
                         })
                         
         return unread_count, recent_emails
@@ -265,13 +327,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--offset', type=int, default=0)
     parser.add_argument('--limit', type=int, default=60)
+    parser.add_argument('--mark-read', type=str, help='Mark email UID as read')
     args = parser.parse_args()
 
     client = GmailClient(user, password)
     
     try:
         client.connect()
-        unread_count, emails = client.fetch_unread_emails(offset=args.offset, limit=args.limit)
+        
+        if args.mark_read:
+            client.mail.select('INBOX', readonly=False)
+            client.mail.uid('STORE', args.mark_read.encode('utf-8'), '+FLAGS', '\\Seen')
+            emit_json({"status": "READ_MARKED", "uid": args.mark_read})
+            return
+            
+        unread_count, emails = client.fetch_emails(offset=args.offset, limit=args.limit)
         
         # Diffing logic
         has_new = False

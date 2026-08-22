@@ -25,6 +25,10 @@ Panel {
     if (root.hostWidget) root.hostWidget.loadMoreEmails()
   }
 
+  Process {
+    id: clipboardProcess
+  }
+
   function open() {
     root.controller.show()
     Qt.callLater(function() {
@@ -302,8 +306,16 @@ Panel {
                 onClicked: function(mouse) {
                   if (mouse.button === Qt.LeftButton) {
                     emailRect.isExpanded = !emailRect.isExpanded
-                  } else if (mouse.button === Qt.MiddleButton || mouse.button === Qt.RightButton) {
+                    if (emailRect.isExpanded && modelData.is_unread) {
+                      if (root.hostWidget) root.hostWidget.markEmailRead(modelData.uid)
+                    }
+                  } else if (mouse.button === Qt.MiddleButton) {
                     if (modelData.url) Qt.openUrlExternally(modelData.url)
+                  } else if (mouse.button === Qt.RightButton) {
+                    var safeText = String(modelData.body || "").replace(/'/g, "'\\''")
+                    clipboardProcess.command = ["bash", "-c", "printf '%s' '" + safeText + "' | wl-copy && notify-send -a Omail 'Copiado' 'Markdown copiado al portapapeles'"]
+                    clipboardProcess.running = false
+                    clipboardProcess.running = true
                   }
                 }
                 
@@ -324,20 +336,21 @@ Panel {
 
                 Text {
                   width: parent.width
-                  text: modelData.from
-                  color: root.contentForeground
+                  text: (modelData.is_unread ? "● " : "") + modelData.from
+                  color: modelData.is_unread ? root.contentForeground : Qt.darker(root.contentForeground, 1.2)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.body
-                  font.bold: true
+                  font.bold: modelData.is_unread === true
                   elide: Text.ElideRight
                 }
 
                 Text {
                   width: parent.width
                   text: modelData.subject
-                  color: Qt.darker(root.contentForeground, 1.2)
+                  color: modelData.is_unread ? Qt.darker(root.contentForeground, 1.2) : Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.bodySmall
+                  font.bold: modelData.is_unread === true
                   elide: Text.ElideRight
                 }
 
@@ -378,6 +391,7 @@ Panel {
                 Text {
                   visible: emailRect.isExpanded
                   width: parent.width
+                  textFormat: Text.MarkdownText
                   text: modelData.body ? modelData.body : "(No text content available)"
                   color: Qt.darker(root.contentForeground, 1.2)
                   font.family: root.contentFontFamily
@@ -385,6 +399,7 @@ Panel {
                   wrapMode: Text.Wrap
                   maximumLineCount: 15
                   elide: Text.ElideRight
+                  onLinkActivated: function(link) { Qt.openUrlExternally(link) }
                 }
               }
             }
