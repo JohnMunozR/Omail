@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local testing and scratch files
+out*.json
+test_*.py
+
+# Omarchy Customization Skills
+skills/
