@@ -1,6 +1,6 @@
 # Omail
 
-A powerful and seamless Gmail client plugin for the Omarchy shell environment. Omail provides a system tray unread counter and an interactive panel to read emails directly from your desktop in a clean, distration-free format.
+A powerful and seamless Gmail client plugin for the Omarchy shell environment. Omail provides a system tray unread counter and an interactive panel to read emails directly from your desktop in a clean, distraction-free format.
 
 ## Features
 
@@ -18,16 +18,31 @@ A powerful and seamless Gmail client plugin for the Omarchy shell environment. O
 - **paplay** (for sound notifications)
 - **notify-send** (for desktop notifications)
 
+## Installation
+
+Run the following command to download and enable the plugin directly from GitHub:
+
+```bash
+omarchy plugin add https://github.com/JohnMunozR/Omail.git --enable --yes
+```
+
+Then restart your shell so the icon appears:
+```bash
+omarchy restart shell
+```
+
 ## Setup and Credentials
 
-Since Google no longer allows basic authentication, you will need to use an App Password:
+For security reasons, Google does not allow using your regular password in third-party applications. You will need to create an "App Password":
 
-1. Go to your Google Account settings -> Security.
-2. Enable 2-Step Verification if it isn't already.
-3. Go to App Passwords and create a new password for "Omail" or "Custom app".
-4. When you first launch Omail from the Omarchy bar, click the settings gear to enter your Gmail address and the 16-character App Password.
+1. Go to your Google Account **Security Settings**: [https://myaccount.google.com/security](https://myaccount.google.com/security)
+2. Ensure you have **2-Step Verification** turned on.
+3. In the top search bar, type **"App passwords"** and select that option.
+4. Type a name to identify it (for example: `Omail`) and click **Create**.
+5. Copy the 16-letter password that appears on the screen (without spaces).
+6. **First login:** Click on the new mail icon that appeared on your top bar. The panel will open showing a login form; simply enter your Gmail address along with the **App Password** you generated, and click the link account button.
 
-The credentials are saved locally in your user configuration directory at `~/.config/omail/credentials.json`.
+*(The credentials are saved locally in your user configuration directory at `~/.config/omail/credentials.json`)*
 
 ## Usage
 
@@ -36,6 +51,15 @@ The credentials are saved locally in your user configuration directory at `~/.co
 - **Double-click or middle-click an email** to open it externally in your web browser.
 - **Click links** inside the email to navigate directly to them (this will close the panel).
 - **Right-click the bar widget** to manually refresh the inbox.
+
+## Uninstallation
+
+To cleanly remove the plugin from your system, run:
+
+```bash
+omarchy plugin remove nmr.omail --yes
+omarchy restart shell
+```
 
 ## Security and Privacy
 
