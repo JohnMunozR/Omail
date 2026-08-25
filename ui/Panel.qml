@@ -25,9 +25,6 @@ Panel {
     if (root.hostWidget) root.hostWidget.loadMoreEmails()
   }
 
-  Process {
-    id: clipboardProcess
-  }
 
   function open() {
     root.controller.show()
@@ -303,7 +300,7 @@ Panel {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                 
                 onClicked: function(mouse) {
                   if (mouse.button === Qt.LeftButton) {
@@ -313,18 +310,19 @@ Panel {
                       if (root.hostWidget) root.hostWidget.markEmailRead(modelData.uid)
                     }
                   } else if (mouse.button === Qt.MiddleButton) {
-                    if (modelData.url) Qt.openUrlExternally(modelData.url)
-                  } else if (mouse.button === Qt.RightButton) {
-                    var safeText = String(modelData.body || "").replace(/'/g, "'\\''")
-                    clipboardProcess.command = ["bash", "-c", "printf '%s' '" + safeText + "' | wl-copy && notify-send -a Omail 'Copiado' 'Markdown copiado al portapapeles'"]
-                    clipboardProcess.running = false
-                    clipboardProcess.running = true
+                    if (modelData.url) {
+                      Qt.openUrlExternally(modelData.url)
+                      root.close()
+                    }
                   }
                 }
                 
                 onDoubleClicked: function(mouse) {
                   if (mouse.button === Qt.LeftButton) {
-                    if (modelData.url) Qt.openUrlExternally(modelData.url)
+                    if (modelData.url) {
+                      Qt.openUrlExternally(modelData.url)
+                      root.close()
+                    }
                   }
                 }
               }
@@ -402,7 +400,7 @@ Panel {
                   wrapMode: Text.Wrap
                   maximumLineCount: 15
                   elide: Text.ElideRight
-                  onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                  onLinkActivated: function(link) { Qt.openUrlExternally(link); root.close() }
                 }
               }
             }
