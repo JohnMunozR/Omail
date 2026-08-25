@@ -18,6 +18,20 @@ A powerful and seamless Gmail client plugin for the Omarchy shell environment. O
 - **paplay** (for sound notifications)
 - **notify-send** (for desktop notifications)
 
+## Installation
+
+You can install Omail directly from the Omarchy Marketplace using the command line:
+
+```bash
+omarchy plugin install nmr.omail
+```
+
+Alternatively, you can clone it manually:
+
+```bash
+omarchy plugin clone https://github.com/JohnMunozR/Omail
+```
+
 ## Setup and Credentials
 
 Since Google no longer allows basic authentication, you will need to use an App Password:
