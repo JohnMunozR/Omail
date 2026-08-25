@@ -3,8 +3,8 @@
   "id": "nmr.omail",
   "name": "Omail",
   "version": "1.0.0",
-  "author": "Antigravity",
-  "description": "Unread email counter and quick view",
+  "author": "JohnMunozR",
+  "description": "A Gmail client for Omarchy with unread counter and clean markdown reader view",
   "kinds": [
     "bar-widget"
   ],
