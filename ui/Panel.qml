@@ -283,6 +283,8 @@ Panel {
             delegate: Rectangle {
               id: emailRect
               property bool isExpanded: false
+              property bool markedRead: false
+              property bool isUnread: modelData.is_unread === true && !markedRead
               property bool matchesFilter: root.hostWidget && root.hostWidget.omailError !== "NOT_LOGGED_IN" && root.hostWidget.omailError !== "AUTH_FAILED" && (root.activeFilter === "All" || (modelData.category && modelData.category === root.activeFilter))
 
               visible: matchesFilter
@@ -306,7 +308,8 @@ Panel {
                 onClicked: function(mouse) {
                   if (mouse.button === Qt.LeftButton) {
                     emailRect.isExpanded = !emailRect.isExpanded
-                    if (emailRect.isExpanded && modelData.is_unread) {
+                    if (emailRect.isExpanded && emailRect.isUnread) {
+                      emailRect.markedRead = true
                       if (root.hostWidget) root.hostWidget.markEmailRead(modelData.uid)
                     }
                   } else if (mouse.button === Qt.MiddleButton) {
@@ -336,21 +339,21 @@ Panel {
 
                 Text {
                   width: parent.width
-                  text: (modelData.is_unread ? "● " : "") + modelData.from
-                  color: modelData.is_unread ? root.contentForeground : Qt.darker(root.contentForeground, 1.2)
+                  text: (emailRect.isUnread ? "● " : "") + modelData.from
+                  color: emailRect.isUnread ? root.contentForeground : Qt.darker(root.contentForeground, 1.2)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.body
-                  font.bold: modelData.is_unread === true
+                  font.bold: emailRect.isUnread
                   elide: Text.ElideRight
                 }
 
                 Text {
                   width: parent.width
                   text: modelData.subject
-                  color: modelData.is_unread ? Qt.darker(root.contentForeground, 1.2) : Qt.darker(root.contentForeground, 1.5)
+                  color: emailRect.isUnread ? Qt.darker(root.contentForeground, 1.2) : Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.bodySmall
-                  font.bold: modelData.is_unread === true
+                  font.bold: emailRect.isUnread
                   elide: Text.ElideRight
                 }
 

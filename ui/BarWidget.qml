@@ -127,16 +127,8 @@ BarWidget {
       markReadProcess.running = false
       markReadProcess.running = true
       
-      var list = root.emailsList.slice()
-      for (var i = 0; i < list.length; i++) {
-        if (list[i].uid === uid && list[i].is_unread === true) {
-          list[i].is_unread = false
-          var count = parseInt(root.unreadCount) || 0
-          if (count > 0) root.unreadCount = String(count - 1)
-          break
-        }
-      }
-      root.emailsList = list
+      var count = parseInt(root.unreadCount) || 0
+      if (count > 0) root.unreadCount = String(count - 1)
     }
   }
 
