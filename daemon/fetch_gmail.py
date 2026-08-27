@@ -98,7 +98,7 @@ class GmailClient:
             latest_nums = latest_nums[start_idx:end_idx]
 
             for num in latest_nums:
-                typ, msg_data = self.mail.fetch(num, '(UID X-GM-THRID BODY.PEEK[])')
+                typ, msg_data = self.mail.fetch(num, '(UID X-GM-THRID BODY.PEEK[]<0.102400>)')
                 if typ != 'OK':
                     continue
 
@@ -123,7 +123,10 @@ class GmailClient:
                         sender = EmailParser.decode_mime_words(msg.get('From', ''))
                         raw_date = str(msg.get('Date', ''))
                         date = EmailParser.parse_date(raw_date)
+                        
                         body = EmailParser.get_plain_text(msg)
+                        if len(body) > 15000:
+                            body = body[:14997] + "..."
 
                         is_unread = num in unseen_nums
 
