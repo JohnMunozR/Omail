@@ -36,6 +36,7 @@ Panel {
   function close() {
     setCenterHoverRevealSuppressed(false)
     root.controller.hide()
+    scroll.contentY = 0
     
     // Clear lazy-loaded emails from memory to free cache
     if (root.hostWidget && root.hostWidget.emailsList && root.hostWidget.emailsList.length > 60) {
@@ -56,8 +57,13 @@ Panel {
   }
 
   function setCenterHoverRevealSuppressed(value) {
-    if (root.bar && "centerHoverRevealSuppressed" in root.bar)
-      root.bar.centerHoverRevealSuppressed = value
+    if (root.bar && "centerHoverRevealSuppressed" in root.bar) {
+      try {
+        root.bar.centerHoverRevealSuppressed = value
+      } catch (e) {
+        // Ignored if read-only
+      }
+    }
   }
 
   KeyboardPanel {
@@ -69,7 +75,7 @@ Panel {
     centerOnBar: true
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(400))
-    contentHeight: panel.fittedContentHeight(mainColumn.implicitHeight)
+    contentHeight: Math.min(panel.fittedContentHeight(mainColumn.implicitHeight), Style.space(600))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -400,7 +406,15 @@ Panel {
                   wrapMode: Text.Wrap
                   maximumLineCount: 15
                   elide: Text.ElideRight
-                  onLinkActivated: function(link) { Qt.openUrlExternally(link); root.close() }
+                  onLinkActivated: function(link) {
+                    var lower = link.trim().toLowerCase()
+                    if (lower.startsWith("https://") || lower.startsWith("http://") || lower.startsWith("mailto:")) {
+                      Qt.openUrlExternally(link)
+                      root.close()
+                    } else {
+                      console.warn("[Omail] Blocked unsafe link scheme:", link)
+                    }
+                  }
                 }
               }
             }
