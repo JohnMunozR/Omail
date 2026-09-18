@@ -5,7 +5,7 @@ A powerful and seamless Gmail client plugin for the Omarchy shell environment. O
 ## Features
 
 - **Bar Widget Integration:** A sleek bar icon that displays your unread email count.
-- **Reader View:** Emails are parsed from HTML to clean, readable Markdown right inside the Omarchy UI. Invisible marketing characters, empty links, and messy tables are stripped away.
+- **Reader View:** Emails are parsed from HTML into clean, strictly safe Markdown right inside the Omarchy UI. Images, tracking pixels, and unsafe links are entirely stripped away for a fast, pure text-first experience.
 - **Instant Mark as Read:** Clicking an email to read it locally marks it as read immediately and syncs with Gmail via IMAP.
 - **Notifications:** Receive desktop notifications and sounds when new mail arrives in your inbox.
 - **Quick Actions:** Middle-click or double-click to instantly open the email in Gmail on your web browser.
@@ -65,7 +65,16 @@ omarchy restart shell
 
 Omail runs locally on your machine.
 Your credentials are never sent anywhere except directly to Google's IMAP servers via SSL.
-All emails are processed locally using a built-in Markdown extraction engine.
+All emails are processed locally using a strict Markdown extraction engine. External resources like images, tracking pixels, scripts, and iframes are heavily suppressed by design to protect your privacy and prevent XSS. All clickable links are verified against a safe-scheme whitelist (`http`, `https`, `mailto`) before being handed to your browser.
+
+
+## Development and Testing
+
+Omail includes a comprehensive suite of unit tests to verify the integrity and security of the text extraction engine. To run the tests locally:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ## License
 
