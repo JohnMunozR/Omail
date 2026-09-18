@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 HTML-to-Markdown text cleaning engine for Omail.
-Converts HTML email content into clean, QML-compatible Markdown.
+Converts HTML email content into clean, QML-compatible Markdown,
+restricted to a strict non-resource subset (no images, safe schemes only).
 """
 
 import re
@@ -13,18 +14,19 @@ from email.message import Message
 from email.utils import parsedate_to_datetime
 
 
-# --- Pre-compiled regex patterns (W1) ---
+# --- Pre-compiled regex patterns ---
 _RE_DATA_SPACES = re.compile(r' +')
-_RE_BOLD_FIX = re.compile(r'\*\*(.*?)\*\*', re.DOTALL)  # W2: DOTALL for multiline
+_RE_BOLD_FIX = re.compile(r'\*\*(.*?)\*\*', re.DOTALL)
 _RE_WHITESPACE_NEWLINE = re.compile(r'[ \t]*\n[ \t]*')
 _RE_LEADING_WHITESPACE = re.compile(r'^[ \t]+', re.MULTILINE)
 _RE_MULTI_SPACE = re.compile(r' {2,}')
 _RE_MULTI_NEWLINE = re.compile(r'\n{3,}')
+_RE_IMAGE_MARKDOWN = re.compile(r'!\[')
 
-# Translation table for invisible/formatting characters (G2: str.translate, G1: soft hyphen)
+# Translation table for invisible/formatting characters
 _TRANSLATE_TABLE: dict[int, str | None] = {0x00A0: ' '}
 for _cp in (
-    0x00AD,   # Soft hyphen (G1)
+    0x00AD,   # Soft hyphen
     0x034F,   # Combining grapheme joiner
     0xFEFF,   # BOM / ZWNBSP
 ):
@@ -33,33 +35,44 @@ for _start, _end in ((0x200B, 0x2010), (0x2028, 0x2030), (0x2060, 0x2070)):
     for _cp in range(_start, _end):
         _TRANSLATE_TABLE[_cp] = None
 
+# Allowed URL schemes for hyperlinks in QML
+_ALLOWED_SCHEMES = ('https://', 'http://', 'mailto:')
+
 
 class HTMLTextExtractor(HTMLParser):
-    """Parses HTML content and extracts clean Markdown for QML rendering."""
+    """Parses HTML content and extracts clean, safe Markdown for QML rendering."""
 
-    # Class-level tag constants (DRY: W6)
     _BLOCK_TAGS = frozenset((
         'br', 'p', 'div', 'tr',
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
         'td', 'th',
     ))
-    _SCRIPT_TAGS = frozenset(('script', 'style'))
+    _IGNORE_TAGS = frozenset((
+        'script', 'style', 'head', 'title',
+        'svg', 'canvas', 'video', 'audio', 'iframe', 'object', 'picture'
+    ))
     _BOLD_TAGS = frozenset(('b', 'strong'))
     _ITALIC_TAGS = frozenset(('i', 'em'))
+    _CODE_TAGS = frozenset(('code', 'tt'))
 
     def __init__(self) -> None:
         super().__init__()
         self.result: List[str] = []
-        self.in_style_or_script: bool = False
+        self._ignore_depth: int = 0
         self.current_link: Optional[str] = None
         self.link_start_index: int = -1
-        self._bold_depth: int = 0    # W4: depth tracking
-        self._italic_depth: int = 0  # W4: depth tracking
+        self._bold_depth: int = 0
+        self._italic_depth: int = 0
+        self._code_depth: int = 0
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
-        if tag in self._SCRIPT_TAGS:
-            self.in_style_or_script = True
-        elif tag in self._BLOCK_TAGS:
+        if tag in self._IGNORE_TAGS:
+            self._ignore_depth += 1
+            return
+        if self._ignore_depth > 0:
+            return
+
+        if tag in self._BLOCK_TAGS:
             self.result.append(' ' if self.current_link else '\n\n')
         elif tag == 'li':
             self.result.append(' ' if self.current_link else '\n\n• ')
@@ -71,19 +84,31 @@ class HTMLTextExtractor(HTMLParser):
             if self._italic_depth == 0:
                 self.result.append('*')
             self._italic_depth += 1
+        elif tag in self._CODE_TAGS:
+            if self._code_depth == 0:
+                self.result.append('`')
+            self._code_depth += 1
         elif tag in ('ul', 'ol'):
             self.result.append(' ' if self.current_link else '\n\n')
         elif tag == 'a':
             if not self.current_link:
-                href = next((v for k, v in attrs if k == 'href'), None)
+                href = next((v.strip() for k, v in attrs if k == 'href' and v), None)
                 if href:
-                    self.current_link = href.replace(' ', '%20').replace('\n', '')
-                    self.link_start_index = len(self.result)
+                    cleaned_href = href.replace(' ', '%20').replace('\n', '').replace('\r', '')
+                    lower_href = cleaned_href.lower()
+                    if any(lower_href.startswith(scheme) for scheme in _ALLOWED_SCHEMES):
+                        self.current_link = cleaned_href
+                        self.link_start_index = len(self.result)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in self._SCRIPT_TAGS:
-            self.in_style_or_script = False
-        elif tag in self._BOLD_TAGS:
+        if tag in self._IGNORE_TAGS:
+            if self._ignore_depth > 0:
+                self._ignore_depth -= 1
+            return
+        if self._ignore_depth > 0:
+            return
+
+        if tag in self._BOLD_TAGS:
             if self._bold_depth > 0:
                 self._bold_depth -= 1
                 if self._bold_depth == 0:
@@ -93,38 +118,47 @@ class HTMLTextExtractor(HTMLParser):
                 self._italic_depth -= 1
                 if self._italic_depth == 0:
                     self.result.append('*')
+        elif tag in self._CODE_TAGS:
+            if self._code_depth > 0:
+                self._code_depth -= 1
+                if self._code_depth == 0:
+                    self.result.append('`')
         elif tag in ('ul', 'ol'):
             self.result.append(' ' if self.current_link else '\n\n')
         elif tag in self._BLOCK_TAGS or tag == 'li':
             self.result.append(' ' if self.current_link else '\n\n')
         elif tag == 'a':
             if self.current_link:
-                # W3: Strip link text here instead of post-processing with
-                # broad bracket regexes that could match non-link brackets
                 link_text = "".join(self.result[self.link_start_index:]).strip()
                 self.result = self.result[:self.link_start_index]
                 if link_text:
-                    self.result.append(f'[{link_text}]({self.current_link})')
+                    safe_text = link_text.replace('[', '\\[').replace(']', '\\]')
+                    safe_url = self.current_link.replace('(', '%28').replace(')', '%29')
+                    self.result.append(f'[{safe_text}]({safe_url})')
                 self.current_link = None
 
     def handle_data(self, data: str) -> None:
-        if not self.in_style_or_script:
-            text = data.replace('\n', ' ').replace('\r', '')
+        if self._ignore_depth == 0:
+            text = data.replace('\n', ' ').replace('\r', '').replace('<', '&lt;')
             text = _RE_DATA_SPACES.sub(' ', text)
             if text.strip() or (text and self.result and not self.result[-1].endswith('\n')):
                 self.result.append(text)
 
     def get_text(self) -> str:
-        # W4: Auto-close unclosed formatting tags
         if self._bold_depth > 0:
             self.result.append('**')
             self._bold_depth = 0
         if self._italic_depth > 0:
             self.result.append('*')
             self._italic_depth = 0
+        if self._code_depth > 0:
+            self.result.append('`')
+            self._code_depth = 0
 
         content = "".join(self.result)
         content = content.translate(_TRANSLATE_TABLE)
+        # Neutralize any markdown image syntax ![alt](url) -> \![alt](url)
+        content = _RE_IMAGE_MARKDOWN.sub(r'\![', content)
         content = _RE_BOLD_FIX.sub(lambda m: f" **{m.group(1).strip()}** ", content)
         content = _RE_WHITESPACE_NEWLINE.sub('\n', content)
         content = _RE_LEADING_WHITESPACE.sub('', content)
@@ -138,7 +172,7 @@ class EmailParser:
 
     @staticmethod
     def strip_html(html_content: str) -> str:
-        """Converts HTML to clean Markdown text."""
+        """Converts HTML to clean, safe Markdown text."""
         if not html_content:
             return ""
         try:
@@ -146,7 +180,6 @@ class EmailParser:
             extractor.feed(html_content)
             return extractor.get_text()
         except Exception:
-            # S2: Escape raw HTML to prevent QML layout breakage
             return html_escape(str(html_content), quote=False)
 
     @staticmethod
@@ -175,7 +208,6 @@ class EmailParser:
         body_plain = ""
         body_html = ""
 
-        # W7: Unified iteration — msg.walk() handles both multipart and single
         for part in msg.walk():
             content_disposition = str(part.get("Content-Disposition"))
             if "attachment" in content_disposition:
@@ -194,7 +226,7 @@ class EmailParser:
 
         if body_plain.strip():
             plain = body_plain.strip()
-            for char in ('*', '_', '`', '#', '[', ']', '<', '>'):
+            for char in ('*', '_', '`', '#', '[', ']', '<', '>', '!'):
                 plain = plain.replace(char, f'\\{char}')
             return plain
 
@@ -219,5 +251,4 @@ class EmailParser:
             dt = parsedate_to_datetime(raw_date)
             return dt.astimezone().isoformat()
         except Exception:
-            # S3: Return safe ISO fallback instead of raw date string
             return "1970-01-01T00:00:00+00:00"
