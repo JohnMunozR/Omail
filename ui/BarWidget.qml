@@ -42,7 +42,8 @@ BarWidget {
   function saveCredentials(email, pass) {
     omailError = "NOT_LOGGED_IN"
     isSavingCreds = true
-    saveCredsProc.command = ["python3", "-c", "import sys, json, os; os.makedirs(os.path.expanduser('~/.config/omail'), exist_ok=True); json.dump({'email': sys.argv[1], 'app_password': sys.argv[2]}, open(os.path.expanduser('~/.config/omail/credentials.json'), 'w'))", email, pass]
+    saveCredsProc.pendingPayload = JSON.stringify({ "email": email, "app_password": pass }) + "\n"
+    saveCredsProc.command = ["python3", Quickshell.env("HOME") + "/Projects/omail/daemon/fetch_gmail.py", "--save-credentials"]
     saveCredsProc.running = true
   }
 
@@ -101,8 +102,35 @@ BarWidget {
 
   Process {
     id: saveCredsProc
+    stdinEnabled: true
+    property string pendingPayload: ""
+    property string saveBuffer: ""
+
+    stdout: SplitParser {
+      onRead: function(data) {
+        saveCredsProc.saveBuffer += data
+        try {
+          var parsed = JSON.parse(saveCredsProc.saveBuffer)
+          saveCredsProc.saveBuffer = ""
+          if (parsed.error) {
+            root.omailError = parsed.error
+          }
+        } catch(e) {
+        }
+      }
+    }
+
+    onStarted: {
+      if (pendingPayload) {
+        saveCredsProc.write(pendingPayload)
+        pendingPayload = ""
+      }
+    }
+
     onExited: {
       root.isSavingCreds = false
+      pendingPayload = ""
+      saveCredsProc.saveBuffer = ""
       root.refresh()
     }
   }

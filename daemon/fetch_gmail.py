@@ -153,17 +153,39 @@ def emit_json(payload: Dict[str, Any]) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--offset', type=int, default=0)
+    parser.add_argument('--limit', type=int, default=60)
+    parser.add_argument('--mark-read', type=str, help='Mark email UID as read')
+    parser.add_argument('--save-credentials', action='store_true', help='Read credentials from stdin and save with 0600 mode')
+    args = parser.parse_args()
+
+    if args.save_credentials:
+        try:
+            raw = sys.stdin.readline()
+            data = json.loads(raw)
+            email = data.get('email')
+            password = data.get('app_password')
+            if email and password:
+                config_dir = os.path.expanduser('~/.config/omail')
+                os.makedirs(config_dir, exist_ok=True)
+                config_path = os.path.join(config_dir, 'credentials.json')
+                fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, 'w') as f:
+                    json.dump({'email': email, 'app_password': password}, f)
+                emit_json({"status": "SAVED"})
+            else:
+                emit_json({"error": "INVALID_PAYLOAD"})
+        except Exception as e:
+            emit_json({"error": str(e)})
+        return
+
     user, password = ConfigProvider.get_credentials()
 
     if not user or not password:
         emit_json({"error": "NOT_LOGGED_IN"})
         return
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--offset', type=int, default=0)
-    parser.add_argument('--limit', type=int, default=60)
-    parser.add_argument('--mark-read', type=str, help='Mark email UID as read')
-    args = parser.parse_args()
 
     client = GmailClient(user, password)
 
