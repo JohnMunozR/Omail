@@ -343,6 +343,7 @@ Panel {
 
                 Text {
                   width: parent.width
+                  textFormat: Text.PlainText
                   text: (emailRect.isUnread ? "● " : "") + modelData.from
                   color: emailRect.isUnread ? root.contentForeground : Qt.darker(root.contentForeground, 1.2)
                   font.family: root.contentFontFamily
@@ -353,6 +354,7 @@ Panel {
 
                 Text {
                   width: parent.width
+                  textFormat: Text.PlainText
                   text: modelData.subject
                   color: emailRect.isUnread ? Qt.darker(root.contentForeground, 1.2) : Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
@@ -363,6 +365,7 @@ Panel {
 
                 Text {
                   width: parent.width
+                  textFormat: Text.PlainText
                   text: {
                     var d = new Date(modelData.date);
                     if (isNaN(d.getTime())) return modelData.date;
